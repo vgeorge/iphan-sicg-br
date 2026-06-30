@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Painel de estatísticas — Sítios Arqueológicos</title>
+<link rel="stylesheet" href="app.css">
 <style>
   :root {
     --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
@@ -50,7 +51,11 @@
 </header>
 
 <div class="wrap" id="wrap">
-  <p class="empty" id="loading">Carregando…</p>
+  <div class="cards">
+    <div class="skeleton skel-card"></div><div class="skeleton skel-card"></div>
+    <div class="skeleton skel-card"></div><div class="skeleton skel-card"></div>
+    <div class="skeleton skel-card"></div>
+  </div>
 </div>
 
 <footer>
@@ -172,9 +177,9 @@ try {
   document.getElementById('wrap').innerHTML =
     cards + matchSec + ufSec + perSec + ctxSec + orphSec;
 } catch (err) {
-  document.getElementById('loading').innerHTML =
-    '<span style="color:var(--no)">Falha ao carregar os dados (' + err.message +
-    '). Rode <code>python build/fetch.py</code> primeiro.</span>';
+  document.getElementById('wrap').innerHTML =
+    '<p style="color:var(--no)">Falha ao carregar os dados (' + err.message +
+    '). Gere os dados com <code>python build/fetch.py</code>.</p>';
 }
 </script>
 </body>

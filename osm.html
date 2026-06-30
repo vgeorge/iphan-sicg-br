@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Triagem — elementos OSM sem cadastro IPHAN</title>
 <link rel="stylesheet" href="vendor/gridjs/mermaid.min.css">
+<link rel="stylesheet" href="app.css">
 <style>
   :root {
     --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
@@ -52,7 +53,7 @@
   footer a { color: var(--accent); }
 </style>
 </head>
-<body>
+<body class="app-shell">
 <header>
   <a href="index.html">← Lista de sítios IPHAN</a>
   <h1>Triagem de elementos OSM sem correspondência no IPHAN</h1>
@@ -75,9 +76,17 @@
       <option value="ref_invalido">ref:iphan inválido</option>
       <option value="triado_no">Já triado (ref:iphan=no)</option>
     </select>
-    <span class="counts" id="counts">Carregando banco…</span>
+    <span class="counts" id="counts"><span class="skeleton skel-pill"></span></span>
   </div>
-  <div id="table"></div>
+  <div class="table-wrap">
+    <div id="table-skel" class="skel-grid">
+      <div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>
+      <div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>
+      <div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>
+      <div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>
+    </div>
+    <div id="table"></div>
+  </div>
 </div>
 
 <footer>
@@ -217,6 +226,7 @@ try {
       noRecordsFound: 'Nenhum elemento encontrado',
     },
   }).render($('table'));
+  document.getElementById('table-skel')?.remove();
   apply();
   let t;
   for (const el of [$('q')]) el.addEventListener('input', () => { clearTimeout(t); t = setTimeout(apply, 200); });

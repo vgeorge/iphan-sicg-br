@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Elemento OSM × candidatos IPHAN — Sítios Arqueológicos</title>
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="app.css">
 <style>
   :root {
     --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
@@ -67,7 +68,13 @@
 </header>
 
 <div class="wrap">
-  <div id="content"><p class="empty">Carregando…</p></div>
+  <div id="content">
+    <div class="top">
+      <div class="skeleton skel-panel"></div>
+      <div class="skeleton skel-panel"></div>
+    </div>
+    <div class="skeleton skel-panel" style="height:300px"></div>
+  </div>
 </div>
 
 <footer>

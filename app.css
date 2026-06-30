@@ -1,0 +1,41 @@
+/* Shared helpers: skeleton placeholders + viewport-fit app shell + responsive.
+   Pages keep their own inline styles; this only adds skeletons/layout primitives.
+   Colors fall back so this works even if a page doesn't define the CSS vars. */
+
+/* --- Skeleton placeholders (rendered before DuckDB resolves, swapped on data ready) --- */
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--line, #e2e0db) 25%, #f3f1eb 37%, var(--line, #e2e0db) 63%);
+  background-size: 400% 100%;
+  animation: skel-shimmer 1.3s ease infinite;
+  border-radius: 6px;
+  color: transparent;
+}
+@keyframes skel-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.skel-grid   { padding: 10px 0; }
+.skel-row    { height: 30px; margin: 6px 0; }
+.skel-line   { height: 12px; margin: 8px 0; border-radius: 4px; }
+.skel-card   { height: 92px; border-radius: 10px; }
+.skel-panel  { height: 220px; border-radius: 10px; border: 1px solid var(--line, #e2e0db); }
+.skel-pill   { display: inline-block; height: 16px; width: 220px; border-radius: 999px; }
+
+/* --- App shell: header + (sidebar | main) + footer all within 100dvh --- */
+.app-shell { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.app-shell .layout { flex: 1; min-height: 0; display: flex; align-items: stretch; }
+.app-shell main { display: flex; flex-direction: column; min-height: 0; }
+.app-shell .wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.app-shell .table-wrap { flex: 1; min-height: 0; overflow: auto; }
+/* In the shell, the sidebar fills the layout region instead of being sticky/100vh. */
+.app-shell aside { position: static; height: auto; }
+
+/* Mobile: stack filters above the table, allow normal page scroll. */
+@media (max-width: 900px) {
+  .app-shell { height: auto; min-height: 100dvh; overflow: auto; }
+  .app-shell .layout { flex-direction: column; }
+  .app-shell aside { position: static; height: auto; width: auto; border-right: none;
+                      border-bottom: 1px solid var(--line, #e2e0db); }
+  .app-shell .table-wrap { overflow: visible; }
+}

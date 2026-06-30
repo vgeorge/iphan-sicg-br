@@ -1,7 +1,9 @@
 // Shared DuckDB-WASM helper. Loads the vendored single-threaded (MVP) build, which
 // needs no SharedArrayBuffer/COI headers, so it works under plain `python -m http.server`.
-// The two parquet files are fetched once and registered as virtual files, then exposed
-// as views `sites` and `osm_orphans`. No runtime third-party calls (data is local).
+// The two parquet files are fetched once into memory and registered as virtual files,
+// then exposed as views `sites` and `osm_orphans`. (Range requests were tried via the HTTP
+// protocol, but DuckDB-WASM issues a full GET here and the file is only ~3 MB, so the
+// in-memory buffer is simpler and deterministic.)
 //
 // Usage (from a module script):
 //   import { initDB, rows, scalar, q } from './db.js';

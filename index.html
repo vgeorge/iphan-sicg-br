@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sítios Arqueológicos do Brasil — IPHAN × OpenStreetMap</title>
 <link rel="stylesheet" href="vendor/gridjs/mermaid.min.css">
+<link rel="stylesheet" href="app.css">
 <style>
   :root {
     --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
@@ -45,7 +46,7 @@
   footer a { color: var(--accent); }
 </style>
 </head>
-<body>
+<body class="app-shell">
 <header>
   <h1>Sítios Arqueológicos do Brasil</h1>
   <p>Cruzamento dos dados do IPHAN (SICG/CNSA) com o OpenStreetMap</p>
@@ -83,8 +84,17 @@
   </aside>
 
   <main>
-    <p class="counts" id="counts">Carregando banco de dados…</p>
-    <div id="table"></div>
+    <p class="counts" id="counts"><span class="skeleton skel-pill"></span></p>
+    <div class="table-wrap">
+      <div id="table-skel" class="skel-grid">
+        <div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>
+        <div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>
+        <div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>
+        <div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>
+        <div class="skeleton skel-row"></div><div class="skeleton skel-row"></div>
+      </div>
+      <div id="table"></div>
+    </div>
   </main>
 </div>
 
@@ -183,6 +193,7 @@ try {
       noRecordsFound: 'Nenhum sítio encontrado',
     },
   }).render($('table'));
+  document.getElementById('table-skel')?.remove();
   await apply();
   let t;
   fEls.forEach(el => el.addEventListener('input', () => {
