@@ -15,17 +15,17 @@ Pré-requisitos: Python 3.11+, `requests` e uma instância **Overpass local** em
 `https://localhost:8080/api/interpreter` (TLS autoassinado).
 
 ```sh
-# 1. Gerar os dados (IPHAN + OSM -> data/)
-python build/fetch.py            # use --force para refazer o download
-
-# 2. Servir o site estático
+# O site já vem com os dados (data/*.parquet versionados) — basta servir:
 python -m http.server 8099
 # abra http://localhost:8099/index.html
+
+# Para regenerar os Parquet (requer Overpass local em localhost:8080):
+python build/fetch.py            # use --force para refazer o download
 ```
 
-O passo 1 baixa ~24 MB do IPHAN e consulta o Overpass local, gravando os brutos em
-`data/raw/` (reutilizados em execuções seguintes). A pasta `data/` inteira é
-**regenerável e não versionada** (`.gitignore`).
+O build baixa ~24 MB do IPHAN e consulta o Overpass local, gravando os brutos em
+`data/raw/` (reutilizados em execuções seguintes, **não versionado**). Os arquivos
+`data/*.parquet` sim são versionados — são o dado que o site consome.
 
 ## Fontes de dados
 
@@ -60,10 +60,10 @@ sobre.html            contexto sobre o cadastro IPHAN (CNSA/SICG, campos, fontes
 vendor/gridjs/        Grid.js auto-hospedado (sem CDN) — versionado
 vendor/leaflet/       Leaflet auto-hospedado — versionado
 vendor/duckdb/        DuckDB-WASM (core) auto-hospedado — versionado
-data/                 GERADO — não versionado
+data/                 Parquet versionado; raw/ ignorado
   sites.parquet       uma linha por sítio (campos + área GeoJSON + proteção + contexto + match OSM)
   osm_orphans.parquet feições OSM órfãs (+ triagem + IPHAN mais próximo)
-  raw/                cache bruto do build (IPHAN, OSM, IBGE)
+  raw/                cache bruto do build (IPHAN, OSM, IBGE) — NÃO versionado
 ```
 
 Filtros do índice refletem a **cardinalidade real** dos dados: removidos "Tipo"
@@ -105,5 +105,7 @@ prévia, observando a sensibilidade de localização de sítios arqueológicos.
 
 ## Licenças
 
-Dados IPHAN/SICG (uso público, NUP 72020.002963/2022-34) · OpenStreetMap
-([ODbL](https://www.openstreetmap.org/copyright)).
+Os `data/*.parquet` combinam dados IPHAN/SICG (uso público, NUP 72020.002963/2022-34)
+com campos derivados do OpenStreetMap ([ODbL](https://www.openstreetmap.org/copyright)).
+A porção originada do OSM (tags e ids correspondidos) permanece sob ODbL; redistribuição
+requer atribuição ao OpenStreetMap. O código deste repositório é MIT.
