@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel de estatísticas — Sítios Arqueológicos</title>
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
+    --line: #e2e0db; --accent: #5b6e4f; --ok: #2f7d4f; --no: #b04a3a; --bar: #b9c6ab;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); }
+  header { padding: 14px 20px; background: var(--accent); color: #fff; }
+  header a { color: #fff; opacity: .85; text-decoration: none; font-size: 13px; }
+  header a:hover { opacity: 1; }
+  header h1 { margin: 6px 0 0; font-size: 18px; }
+  .wrap { padding: 18px 20px; max-width: 1000px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+           gap: 12px; margin-bottom: 22px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 14px 16px; }
+  .card .n { font-size: 24px; font-weight: 700; }
+  .card .l { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .card .s { font-size: 12px; color: var(--accent); margin-top: 4px; }
+  section { margin-bottom: 26px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
+       color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+          border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  th { background: #efeee9; text-align: left; font-size: 11px; text-transform: uppercase;
+       color: var(--muted); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-wrap { position: relative; background: #efeee9; border-radius: 4px; height: 16px;
+              min-width: 80px; }
+  .bar { position: absolute; left: 0; top: 0; bottom: 0; background: var(--bar);
+         border-radius: 4px; }
+  .bar.ok { background: #bcdcc8; }
+  .pct { font-size: 12px; color: var(--muted); }
+  .empty { color: var(--muted); font-style: italic; }
+  footer { padding: 14px 20px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← Lista de sítios IPHAN</a>
+  <h1>Painel de estatísticas</h1>
+</header>
+
+<div class="wrap" id="wrap">
+  <p class="empty" id="loading">Carregando…</p>
+</div>
+
+<footer>
+  Fontes: IPHAN (SICG), OpenStreetMap (ODbL), IBGE. Agregado no navegador via DuckDB-WASM
+  a partir do Parquet gerado em build.
+</footer>
+
+<script type="module">
+import { rows, scalar } from './db.js';
+
+function pct(a, b) { return b ? (100 * a / b) : 0; }
+function fmt(n) { return Number(n || 0).toLocaleString('pt-BR'); }
+function bar(value, max, ok) {
+  const w = max ? Math.max(2, 100 * value / max) : 0;
+  return `<div class="bar-wrap"><div class="bar${ok ? ' ok' : ''}" style="width:${w}%"></div></div>`;
+}
+
+try {
+  const total    = await scalar('SELECT count(*) FROM sites');
+  const mapped   = await scalar('SELECT count(*) FROM sites WHERE osm_mapped');
+  const coords   = await scalar('SELECT count(*) FROM sites WHERE lat IS NOT NULL');
+  const byRef    = await scalar("SELECT count(*) FROM sites WHERE osm_method = 'ref:iphan'");
+  const byProx   = await scalar("SELECT count(*) FROM sites WHERE osm_method = 'proximity'");
+  const footp    = await scalar('SELECT count(*) FROM sites WHERE area_geojson IS NOT NULL');
+  const protect  = await scalar('SELECT count(*) FROM sites WHERE protecoes IS NOT NULL');
+  const context  = await scalar('SELECT count(*) FROM sites WHERE contexto IS NOT NULL');
+
+  const ufRows = await rows(`SELECT COALESCE(uf,'—') AS k, count(*) AS total,
+       sum(CASE WHEN osm_mapped THEN 1 ELSE 0 END) AS mapped
+       FROM sites GROUP BY uf ORDER BY total DESC`);
+  const ufMax = Math.max(1, ...ufRows.map(r => r.total));
+
+  const perRows = await rows(`SELECT COALESCE(periodo,'—') AS k, count(*) AS n
+       FROM sites GROUP BY periodo ORDER BY n DESC`);
+  const perMax = Math.max(1, ...perRows.map(r => r.n));
+
+  const o = (await rows(`SELECT count(*) AS total,
+       sum(CASE WHEN nearest_iphan_m <= 1000 THEN 1 ELSE 0 END) AS nearmiss,
+       sum(CASE WHEN ref_unmatched THEN 1 ELSE 0 END) AS badref FROM osm_orphans`))[0];
+
+  const cards = `
+    <div class="cards">
+      <div class="card"><div class="n">${fmt(total)}</div><div class="l">sítios IPHAN</div></div>
+      <div class="card"><div class="n">${fmt(mapped)}</div><div class="l">mapeados no OSM</div>
+        <div class="s">${pct(mapped, total).toFixed(1)}% do total</div></div>
+      <div class="card"><div class="n">${fmt(footp)}</div><div class="l">com polígono (área)</div>
+        <div class="s">${pct(footp, total).toFixed(0)}% do total</div></div>
+      <div class="card"><div class="n">${fmt(protect)}</div><div class="l">com proteção legal</div>
+        <div class="s">${pct(protect, total).toFixed(0)}% do total</div></div>
+      <div class="card"><div class="n">${fmt(o.total)}</div><div class="l">elementos OSM órfãos</div>
+        <div class="s">${fmt(o.nearmiss)} a ≤1&nbsp;km do IPHAN</div></div>
+    </div>`;
+
+  const matchSec = `
+    <section>
+      <h2>Correspondência OSM</h2>
+      <table>
+        <tr><th>Método</th><th>Sítios</th></tr>
+        <tr><td>por <code>ref:iphan</code></td><td class="num">${fmt(byRef)}</td></tr>
+        <tr><td>por proximidade (≤150 m)</td><td class="num">${fmt(byProx)}</td></tr>
+        <tr><td>não mapeados</td><td class="num">${fmt(total - mapped)}</td></tr>
+      </table>
+    </section>`;
+
+  const ufSec = `
+    <section>
+      <h2>Por estado (UF)</h2>
+      <table>
+        <tr><th>UF</th><th>Total</th><th>Distribuição</th><th>Mapeados</th><th>% mapeado</th></tr>
+        ${ufRows.map(r => `
+          <tr>
+            <td>${r.k}</td>
+            <td class="num">${fmt(r.total)}</td>
+            <td>${bar(r.total, ufMax)}</td>
+            <td class="num">${fmt(r.mapped)}</td>
+            <td class="num pct">${pct(r.mapped, r.total).toFixed(1)}%</td>
+          </tr>`).join('')}
+      </table>
+    </section>`;
+
+  const perSec = `
+    <section>
+      <h2>Por período (classificação SICG)</h2>
+      <table>
+        <tr><th>Período</th><th>Sítios</th><th>Distribuição</th></tr>
+        ${perRows.map(r => `
+          <tr>
+            <td>${r.k}</td>
+            <td class="num">${fmt(r.n)}</td>
+            <td>${bar(r.n, perMax, true)}</td>
+          </tr>`).join('')}
+      </table>
+    </section>`;
+
+  const orphSec = `
+    <section>
+      <h2>Órfãos do OSM (sem cadastro IPHAN)</h2>
+      <table>
+        <tr><th>Indicador</th><th>Qtde.</th></tr>
+        <tr><td>Total de elementos OSM sem match</td><td class="num">${fmt(o.total)}</td></tr>
+        <tr><td>Com IPHAN a ≤1&nbsp;km (quase-acerto)</td><td class="num">${fmt(o.nearmiss)}</td></tr>
+        <tr><td>Com <code>ref:iphan</code> inválido</td><td class="num">${fmt(o.badref)}</td></tr>
+      </table>
+      <p class="pct" style="margin-top:8px">Detalhe em <a href="osm.html">osm.html</a>.</p>
+    </section>`;
+
+  const ctxSec = `
+    <section>
+      <h2>Cobertura do cadastro enriquecido</h2>
+      <table>
+        <tr><th>Camada</th><th>Sítios</th><th>% do total</th></tr>
+        <tr><td>Com coordenadas</td><td class="num">${fmt(coords)}</td><td class="num pct">${pct(coords, total).toFixed(0)}%</td></tr>
+        <tr><td>Com polígono (SICG:sitios_pol)</td><td class="num">${fmt(footp)}</td><td class="num pct">${pct(footp, total).toFixed(0)}%</td></tr>
+        <tr><td>Com proteção legal (SICG:Bem_Protecao)</td><td class="num">${fmt(protect)}</td><td class="num pct">${pct(protect, total).toFixed(0)}%</td></tr>
+        <tr><td>Em área de contexto (SICG:ctx_imediato)</td><td class="num">${fmt(context)}</td><td class="num pct">${pct(context, total).toFixed(0)}%</td></tr>
+      </table>
+    </section>`;
+
+  document.getElementById('wrap').innerHTML =
+    cards + matchSec + ufSec + perSec + ctxSec + orphSec;
+} catch (err) {
+  document.getElementById('loading').innerHTML =
+    '<span style="color:var(--no)">Falha ao carregar os dados (' + err.message +
+    '). Rode <code>python build/fetch.py</code> primeiro.</span>';
+}
+</script>
+</body>
+</html>

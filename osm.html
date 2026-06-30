@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triagem — elementos OSM sem cadastro IPHAN</title>
+<link rel="stylesheet" href="vendor/gridjs/mermaid.min.css">
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
+    --line: #e2e0db; --accent: #5b6e4f; --ok: #2f7d4f; --no: #b04a3a; --warn: #b8860b;
+    --cand: #2f6f7d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); }
+  header { padding: 14px 20px; background: var(--accent); color: #fff; }
+  header a { color: #fff; opacity: .85; text-decoration: none; font-size: 13px; }
+  header a:hover { opacity: 1; }
+  header h1 { margin: 6px 0 0; font-size: 18px; }
+  .wrap { padding: 16px 20px; }
+  .intro { max-width: 860px; color: var(--muted); margin: 0 0 14px; }
+  .controls { margin: 0 0 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  input[type=search], select { padding: 6px 8px; border: 1px solid var(--line);
+            border-radius: 6px; font: inherit; background: #fff; }
+  input[type=search] { min-width: 220px; }
+  .counts { font-size: 13px; color: var(--muted); }
+  .counts b { color: var(--ink); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px;
+          font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .t-cand { background: #dceaee; color: var(--cand); }
+  .t-sem  { background: #eee; color: var(--muted); }
+  .t-ref  { background: #f6efd9; color: var(--warn); }
+  .t-no   { background: #e3f1e8; color: var(--ok); }
+  .tag { font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+         background: #f3f2ec; border: 1px solid var(--line); border-radius: 5px;
+         padding: 1px 6px; }
+  .copy { cursor: pointer; border: 1px solid var(--line); background: #fff; border-radius: 5px;
+          font-size: 11px; padding: 1px 6px; margin-left: 4px; color: var(--accent); }
+  .copy:hover { background: #f0efe9; }
+  .edbtn { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 5px;
+           border: 1px solid var(--line); background: #fff; color: var(--accent);
+           text-decoration: none; margin-right: 4px; }
+  .edbtn:hover { background: #f0efe9; }
+  .hint { color: var(--muted); font-size: 11px; }
+  .empty { color: var(--muted); font-style: italic; }
+  .gridjs-th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+               color: var(--muted); background: #efeee9; }
+  .gridjs-td { vertical-align: top; }
+  a.ext { color: var(--accent); }
+  footer { padding: 14px 20px; font-size: 12px; color: var(--muted); }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← Lista de sítios IPHAN</a>
+  <h1>Triagem de elementos OSM sem correspondência no IPHAN</h1>
+</header>
+
+<div class="wrap">
+  <p class="intro">
+    Feições <code>historic=archaeological_site</code> no OSM (Brasil) que <b>não</b> casaram
+    com nenhum registro do IPHAN. Para cada uma, uma <b>categoria de triagem</b> e uma
+    <b>sugestão</b>. Confirme sempre no terreno/fontes antes de editar — <code>ref:iphan=no</code>
+    ainda não é convenção estabelecida no OSM (use com critério). <b>iD</b> e <b>JOSM</b> abrem
+    o editor centralizados no elemento (o JOSM precisa estar rodando com remote control).
+  </p>
+  <div class="controls">
+    <input type="search" id="q" placeholder="Filtrar por nome…">
+    <select id="cat">
+      <option value="">Todas as categorias</option>
+      <option value="candidato">Candidato próximo (há IPHAN ≤1 km)</option>
+      <option value="sem_cadastro">Sem cadastro aparente</option>
+      <option value="ref_invalido">ref:iphan inválido</option>
+      <option value="triado_no">Já triado (ref:iphan=no)</option>
+    </select>
+    <span class="counts" id="counts">Carregando banco…</span>
+  </div>
+  <div id="table"></div>
+</div>
+
+<footer>
+  Fonte: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL) ·
+  <a href="sobre.html">Sobre o cadastro IPHAN</a>. Consulta local via DuckDB-WASM.
+</footer>
+
+<script src="vendor/gridjs/gridjs.umd.js"></script>
+<script type="module">
+import { rows } from './db.js';
+const $ = (id) => document.getElementById(id);
+let DATA = [], grid = null;
+
+function esc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+const TRIAGE = {
+  candidato:    ['t-cand', 'candidato próximo'],
+  sem_cadastro: ['t-sem',  'sem cadastro aparente'],
+  ref_invalido: ['t-ref',  'ref inválido'],
+  triado_no:    ['t-no',   'já triado'],
+};
+function editLinks(o) {
+  const [t, id] = (o.osm_id || '').split('/');
+  if (!t || id == null || o.lat == null) return '<span class="empty">—</span>';
+  const d = 0.004;
+  const idUrl = `https://www.openstreetmap.org/edit?editor=id&${t}=${id}#map=18/${o.lat}/${o.lon}`;
+  const josm = `http://127.0.0.1:8111/load_and_zoom?left=${o.lon-d}&right=${o.lon+d}` +
+               `&top=${o.lat+d}&bottom=${o.lat-d}&select=${t}${id}`;
+  return `<a class="edbtn" target="_blank" rel="noopener" href="${idUrl}">iD</a>` +
+         `<a class="edbtn" target="_blank" rel="noopener" href="${josm}">JOSM</a>`;
+}
+function htmlName(o) {
+  const label = o.name ? esc(o.name) : '<span class="empty">(sem nome)</span>';
+  return `<a class="ext" href="elemento.html#${encodeURIComponent(o.osm_id)}" title="Possíveis matches IPHAN">${label}</a>`;
+}
+function suggestion(o) {
+  if (o.triage === 'candidato' && o.nearest_iphan_co)
+    return { tag: `ref:iphan=${o.nearest_iphan_co}`, hint: `se for o mesmo sítio (a ${o.nearest_iphan_m} m)` };
+  if (o.triage === 'sem_cadastro')
+    return { tag: 'ref:iphan=no', hint: 'se confirmar que não há registro' };
+  if (o.triage === 'ref_invalido')
+    return { tag: null, hint: `revisar valor atual: ${o.ref_iphan ?? '—'}` };
+  return { tag: null, hint: 'já possui ref:iphan=no' };
+}
+function copyBtn(text) { return `<button class="copy" data-copy="${esc(text)}">copiar</button>`; }
+function htmlSug(o) {
+  const sg = suggestion(o);
+  return (sg.tag
+      ? `<span class="tag">${esc(sg.tag)}</span>${copyBtn(sg.tag)}` : '<span class="hint">—</span>')
+    + `<div class="hint">${esc(sg.hint)}</div>`;
+}
+function htmlTri(o) {
+  const [cls, label] = TRIAGE[o.triage] || ['t-sem', o.triage];
+  return `<span class="pill ${cls}">${label}</span>`;
+}
+function htmlNear(o) {
+  if (o.nearest_iphan_id == null) return '<span class="empty">nenhum</span>';
+  const km = o.nearest_iphan_m <= 1000 ? ' · quase-acerto' : '';
+  const sicg = o.nearest_iphan_idbem
+    ? ` · <a class="ext" target="_blank" rel="noopener" href="https://sicg.iphan.gov.br/sicg/bem/visualizar/${o.nearest_iphan_idbem}">SICG</a>` : '';
+  return `<a class="ext" href="site.html#${encodeURIComponent(o.nearest_iphan_id)}">` +
+    `${esc(o.nearest_iphan_name) || o.nearest_iphan_id}</a>` +
+    `<div class="hint">${(o.nearest_iphan_m||0).toLocaleString('pt-BR')} m${km}${sicg}</div>`;
+}
+function htmlCoords(o) {
+  if (o.lat == null) return '—';
+  const url = `https://www.openstreetmap.org/?mlat=${o.lat}&mlon=${o.lon}#map=18/${o.lat}/${o.lon}`;
+  return `<a class="ext" target="_blank" rel="noopener" href="${url}" style="font-family:ui-monospace,monospace;font-size:12px">${o.lat.toFixed(4)}, ${o.lon.toFixed(4)}</a>`;
+}
+
+const H = (cell) => gridjs.html(cell == null ? '' : cell);
+const columns = [
+  { name: 'Nome', formatter: (c) => H(c), width: '180px' },
+  { name: 'Geom.', width: '70px', formatter: (c) => H(esc(c)) },
+  { name: 'Triagem', formatter: (c) => H(c), width: '130px' },
+  { name: 'Sugestão', formatter: (c) => H(c) },
+  { name: 'IPHAN próximo', formatter: (c) => H(c), width: '170px' },
+  { name: 'Coords', formatter: (c) => H(c), width: '130px' },
+  { name: 'Editar', formatter: (c) => H(c), width: '150px' },
+];
+
+function toRows(list) {
+  return list.map(o => [
+    htmlName(o),
+    o.osm_type || '',
+    htmlTri(o),
+    htmlSug(o),
+    htmlNear(o),
+    htmlCoords(o),
+    editLinks(o),
+  ]);
+}
+
+function filtered() {
+  const q = $('q').value.trim().toLowerCase();
+  const cat = $('cat').value;
+  return DATA.filter(o => {
+    if (cat && o.triage !== cat) return false;
+    if (q && !((o.name || '').toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function apply() {
+  const list = filtered();
+  const by = {};
+  for (const o of DATA) by[o.triage] = (by[o.triage] || 0) + 1;
+  $('counts').innerHTML =
+    `<b>${list.length}</b> de <b>${DATA.length}</b> · ` +
+    `${by.candidato || 0} candidatos · ${by.sem_cadastro || 0} sem cadastro · ` +
+    `${by.ref_invalido || 0} ref inválido · ${by.triado_no || 0} triados`;
+  grid.updateConfig({ data: toRows(list) }).forceRender();
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.copy');
+  if (!btn) return;
+  navigator.clipboard?.writeText(btn.dataset.copy);
+  const old = btn.textContent;
+  btn.textContent = 'copiado!';
+  setTimeout(() => { btn.textContent = old; }, 1200);
+});
+
+try {
+  DATA = await rows('SELECT * FROM osm_orphans');
+  grid = new gridjs.Grid({
+    columns,
+    data: toRows(DATA),
+    pagination: { limit: 25 },
+    sort: true,
+    autoWidth: true,
+    language: {
+      pagination: { previous: 'Anterior', next: 'Próximo', showing: 'Exibindo',
+                    results: () => 'resultados', to: 'a', of: 'de' },
+      noRecordsFound: 'Nenhum elemento encontrado',
+    },
+  }).render($('table'));
+  apply();
+  let t;
+  for (const el of [$('q')]) el.addEventListener('input', () => { clearTimeout(t); t = setTimeout(apply, 200); });
+  $('cat').addEventListener('change', apply);
+} catch (err) {
+  $('counts').innerHTML =
+    `<span style="color:var(--no)">Falha ao carregar (${esc(err.message)}). ` +
+    'Rode <code>python build/fetch.py</code> primeiro.</span>';
+}
+</script>
+</body>
+</html>
+

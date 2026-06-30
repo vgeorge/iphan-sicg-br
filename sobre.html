@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sobre o cadastro IPHAN — Sítios Arqueológicos</title>
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
+    --line: #e2e0db; --accent: #5b6e4f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); }
+  header { padding: 14px 20px; background: var(--accent); color: #fff; }
+  header a { color: #fff; opacity: .85; text-decoration: none; font-size: 13px; }
+  header a:hover { opacity: 1; }
+  header h1 { margin: 6px 0 0; font-size: 18px; }
+  .wrap { padding: 22px 20px; max-width: 760px; }
+  h2 { font-size: 15px; margin: 26px 0 8px; color: var(--accent); }
+  h2:first-of-type { margin-top: 0; }
+  p { margin: 8px 0; }
+  a { color: var(--accent); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 16px 18px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 8px 0; }
+  dt { font-family: ui-monospace, Menlo, monospace; color: var(--accent); font-size: 13px; }
+  dd { margin: 0; }
+  ul { margin: 8px 0; padding-left: 20px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  footer { padding: 14px 20px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← Lista de sítios IPHAN</a>
+  <h1>Sobre o cadastro de sítios arqueológicos do IPHAN</h1>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <h2>CNSA e SICG</h2>
+    <p>O <b>IPHAN</b> (Instituto do Patrimônio Histórico e Artístico Nacional) mantém o
+      cadastro nacional de sítios arqueológicos. Historicamente, os sítios eram
+      registrados no <b>CNSA</b> (Cadastro Nacional de Sítios Arqueológicos), criado pela
+      ficha da Portaria nº 241/1998. Esse acervo legado tem muitos registros sem
+      coordenadas confiáveis.</p>
+    <p>Atualmente o registro e a gestão se dão pelo <b>SICG</b> (Sistema Integrado de
+      Conhecimento e Gestão), por meio da Ficha de Cadastro de Sítios Arqueológicos
+      (FCSA). O reconhecimento de um sítio ocorre pela <b>homologação</b> do cadastro no
+      SICG, sob responsabilidade do Centro Nacional de Arqueologia (CNA).</p>
+    <p class="muted">Este site usa a camada <code>SICG:sitios</code> do GeoServer do IPHAN
+      (registros homologados, com coordenadas) como fonte primária.</p>
+
+    <h2>Campos do registro</h2>
+    <dl>
+      <dt>co_iphan</dt><dd><b>Código estruturado</b> do bem — o identificador confiável.
+        Decodifica em segmentos: <code>UF</code> (2) + <code>IBGE do município</code> (7) +
+        <code>natureza</code> (2: <code>BA</code>=Bem Arqueológico, <code>BI</code>=Bem Imóvel…) +
+        <code>tipo</code> (2: <code>ST</code>=Sítio, <code>ED</code>=Edificação…) + <code>sequência</code> (5).
+        Ex.: <code>AC1200450BAST00080</code> → AC, Senador Guiomard, Bem Arqueológico, Sítio, 00080.</dd>
+      <dt>identificacao_bem</dt><dd><b>Nome/etiqueta livre</b> do sítio (ex.: "AC-IQ-08: Catuaba").
+        Quando segue o padrão <code>UF-XX-NN: nome</code>, <code>UF</code> é o estado, <code>XX</code> é um
+        <b>mnemônico informal</b> de região/campanha de pesquisa (às vezes ligado a um município ou bacia,
+        mas <b>não padronizado</b> — só ~5% dos registros o seguem) e o que vem depois dos <code>:</code> é o
+        nome tradicional. Para referenciar um sítio de forma estável, use sempre o <code>co_iphan</code>.</dd>
+      <dt>ds_natureza</dt><dd>Natureza do bem — quase sempre "Bem Arqueológico"
+        (raros "Bem Paleontológico").</dd>
+      <dt>ds_classificacao</dt><dd>Período/classificação: Pré-colonial, Histórico,
+        De contato etc. Cerca de 45% como "Sem classificação".</dd>
+      <dt>ds_tipo_bem</dt><dd>Tipo do bem — constante "Sítio" no acervo atual.</dd>
+      <dt>sintese_bem</dt><dd>Texto-síntese (presente em ~56% dos registros).</dd>
+      <dt>dt_cadastro</dt><dd>Data do cadastro no SICG.</dd>
+    </dl>
+
+    <h2>Como cruzamos com o OpenStreetMap</h2>
+    <ul>
+      <li>Casamento por tag <code>ref:iphan</code> (igual ao <code>co_iphan</code>) e, na
+        ausência, por proximidade (≤500 m).</li>
+      <li>Elementos do OSM sem correspondência são listados para
+        <a href="osm.html">triagem</a>, com sugestões de tag.</li>
+      <li><code>ref:iphan=no</code> é uma <b>sugestão</b> para marcar "sem registro no
+        IPHAN" — ainda não é convenção consolidada no OSM; use com critério.</li>
+    </ul>
+
+    <h2>Fontes e licença</h2>
+    <ul>
+      <li><a href="https://www.gov.br/iphan/pt-br/patrimonio-cultural/patrimonio-arqueologico/cadastro-de-sitios-arqueologicos"
+             target="_blank" rel="noopener">Cadastro de Sítios Arqueológicos — IPHAN (gov.br)</a></li>
+      <li><a href="https://geoserver.iphan.gov.br/geoserver/web/" target="_blank" rel="noopener">GeoServer do IPHAN</a>
+        (camada <code>SICG:sitios</code>)</li>
+      <li>Dados IPHAN de uso público — NUP 72020.002963/2022-34.</li>
+      <li>Municípios via <a href="https://servicodados.ibge.gov.br/api/docs/localidades"
+            target="_blank" rel="noopener">API de Localidades do IBGE</a>.</li>
+      <li>OpenStreetMap — <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">ODbL</a>.</li>
+    </ul>
+  </div>
+</div>
+
+<footer>
+  Conteúdo informativo baseado nas páginas públicas do IPHAN. Verifique sempre a fonte
+  oficial para fins legais.
+</footer>
+</body>
+</html>

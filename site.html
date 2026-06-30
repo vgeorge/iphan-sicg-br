@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sítio Arqueológico — IPHAN × OpenStreetMap</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
+    --line: #e2e0db; --accent: #5b6e4f; --ok: #2f7d4f; --no: #b04a3a; --div: #b8860b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); }
+  header { padding: 14px 20px; background: var(--accent); color: #fff; }
+  header a { color: #fff; opacity: .85; text-decoration: none; font-size: 13px; }
+  header a:hover { opacity: 1; }
+  header h1 { margin: 6px 0 0; font-size: 19px; }
+  .wrap { padding: 18px 20px; }
+  .top { display: grid; grid-template-columns: 1.2fr 1.6fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 900px) { .top { grid-template-columns: 1fr; } }
+  .panels { display: grid; grid-template-columns: 1fr 1fr 0.8fr; gap: 16px; }
+  @media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 16px; }
+  .panel h2 { margin: 0 0 12px; font-size: 12px; text-transform: uppercase;
+              letter-spacing: .06em; color: var(--muted);
+              border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  .panel h2:not(:first-child) { margin-top: 16px; }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+  dt { color: var(--muted); font-size: 12px; }
+  dd { margin: 0; word-break: break-word; }
+  .tags { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; }
+  .tags dt { font-family: ui-monospace, Menlo, monospace; color: var(--accent); }
+  .status-card { text-align: center; }
+  .status-big { font-size: 17px; font-weight: 700; margin: 8px 0 14px; }
+  .s-ok { color: var(--ok); } .s-no { color: var(--no); } .s-div { color: var(--div); }
+  .pill { display: inline-block; padding: 3px 12px; border-radius: 999px;
+          font-size: 12px; font-weight: 600; }
+  .p-ok { background: #e3f1e8; color: var(--ok); }
+  .p-no { background: #f6e6e2; color: var(--no); }
+  .p-div { background: #f6efd9; color: var(--div); }
+  ul.divs { margin: 10px 0 0; padding-left: 18px; text-align: left; font-size: 13px; }
+  a.ext { color: var(--accent); }
+  .links { margin: 14px 0 0; font-size: 12.5px; line-height: 1.7;
+           border-top: 1px solid var(--line); padding-top: 10px; }
+  .empty { color: var(--muted); font-style: italic; }
+  #map { height: 360px; border-radius: 10px; border: 1px solid var(--line); }
+  .edlinks { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .edbtn { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 6px;
+           border: 1px solid var(--line); background: #fff; color: var(--accent);
+           text-decoration: none; }
+  .edbtn:hover { background: #f0efe9; }
+  .edbtn small { color: var(--muted); }
+  .protecoes { list-style: none; margin: 0; padding: 0; }
+  .protecoes li { padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .protecoes li:last-child { border-bottom: none; }
+  .ctx p { margin: 4px 0; font-size: 13px; }
+  .ctx .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← Voltar à lista</a>
+  <h1 id="title">Sítio Arqueológico</h1>
+</header>
+
+<div class="wrap">
+  <div id="content"><p class="empty">Carregando…</p></div>
+</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module">
+
+import { rows, q } from './db.js';
+
+function esc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+const parse = (v) => (v == null || v === '') ? null : JSON.parse(v);
+const row = (k, v) => `<dt>${k}</dt><dd>${v == null || v === '' ?
+  '<span class="empty">—</span>' : esc(v)}</dd>`;
+const fmtDate = (v) => {
+  if (!v) return null;
+  const m = String(v).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(m) ? m.split('-').reverse().join('/') : v;
+};
+function sicgUrl(idBem) { return `https://sicg.iphan.gov.br/sicg/bem/visualizar/${idBem}`; }
+function osmCoordUrl(lat, lon) {
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=18/${lat}/${lon}`;
+}
+const coordCell = (s) => s.lat != null
+  ? `<dt>Coordenadas</dt><dd><a class="ext" target="_blank" rel="noopener" href="${osmCoordUrl(s.lat, s.lon)}">${s.lat}, ${s.lon}</a></dd>`
+  : `<dt>Coordenadas</dt><dd><span class="empty">—</span></dd>`;
+
+function osmLink(osmId) {
+  const [type, id] = (osmId || '').split('/');
+  return `https://www.openstreetmap.org/${type}/${id}`;
+}
+
+// iD + JOSM editor links centered on the site area. If a matched OSM element exists,
+// it's preselected (iD) / loaded+selected (JOSM). JOSM needs remote control enabled.
+function editorLinks(s) {
+  if (s.lat == null) return '';
+  const d = 0.004;
+  const sel = s.osm_id ? `${s.osm_type}${(s.osm_id.split('/')[1] || '')}` : null;
+  const idParam = s.osm_id ? `&${s.osm_type}=${s.osm_id.split('/')[1]}` : '';
+  const idUrl = `https://www.openstreetmap.org/edit?editor=id${idParam}#map=18/${s.lat}/${s.lon}`;
+  const josm = `http://127.0.0.1:8111/load_and_zoom?left=${s.lon-d}&right=${s.lon+d}` +
+               `&top=${s.lat+d}&bottom=${s.lat-d}` + (sel ? `&select=${sel}` : '');
+  const label = s.osm_id ? 'editar elemento' : 'adicionar no mapa';
+  return `<div class="edlinks">` +
+    `<a class="edbtn" target="_blank" rel="noopener" href="${idUrl}">✏️ iD <small>(${label})</small></a>` +
+    `<a class="edbtn" target="_blank" rel="noopener" href="${josm}">🖥️ JOSM</a>` +
+    `</div>`;
+}
+
+function renderMap(s) {
+  if (s.lat == null && !(s.area || s.osm_lat != null)) {
+    document.getElementById('mapwrap').innerHTML =
+      '<p class="empty">Este sítio não possui coordenadas nem área.</p>';
+    return;
+  }
+  const map = L.map('map');
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap'
+  }).addTo(map);
+  // Establish a view BEFORE adding vector layers: Leaflet's renderer needs pixel
+  // bounds to clip/draw polygons, and those only exist after a setView/_resetView.
+  map.setView([s.lat ?? -14, s.lon ?? -52], s.lat != null ? 15 : 5);
+
+  const layers = [];
+  if (s.area) {
+    const poly = L.geoJSON(s.area, {
+      style: { color: '#5b6e4f', weight: 2, fillColor: '#5b6e4f', fillOpacity: 0.18 }
+    }).addTo(map);
+    layers.push(poly);
+  }
+  if (s.lat != null) {
+    const m = L.circleMarker([s.lat, s.lon], { radius: 6, color: '#2f7d4f',
+      fillColor: '#2f7d4f', fillOpacity: 0.9, weight: 2 }).addTo(map);
+    m.bindTooltip((s.name || 'Sítio') + ' (IPHAN)');
+    layers.push(m);
+  }
+  if (s.osm && s.osm_lat != null) {
+    const om = L.circleMarker([s.osm_lat, s.osm_lon], { radius: 6, color: '#b8860b',
+      fillColor: '#b8860b', fillOpacity: 0.9, weight: 2 }).addTo(map);
+    om.bindTooltip('OpenStreetMap');
+    layers.push(om);
+  }
+  if (layers.length) {
+    try {
+      const b = L.featureGroup(layers).getBounds();
+      if (b.isValid() && b.getNorth() !== b.getSouth()) {
+        map.fitBounds(b, { padding: [30, 30], maxZoom: 18 });
+      }
+    } catch { /* keep the setView above */ }
+  }
+  // The #map container is laid out after this sync block; re-measure so vector
+  // layers (polygon/markers) actually draw into the SVG overlay.
+  requestAnimationFrame(() => map.invalidateSize());
+}
+
+async function render(s) {
+  s.area = parse(s.area_geojson);
+  s.protecoes = parse(s.protecoes) || [];
+  s.contexto = parse(s.contexto);
+  s.osm = s.osm_mapped ? { tags: parse(s.osm_tags) || {} } : null;
+
+  document.getElementById('title').textContent = s.name || s.id;
+  document.title = (s.name || s.id) + ' — Sítio Arqueológico';
+
+  // --- IPHAN panel
+  const codCell = (s.id_bem && s.co_iphan)
+    ? `<dt>Código IPHAN</dt><dd><a class="ext" target="_blank" rel="noopener" title="Abrir no SICG" href="${sicgUrl(s.id_bem)}">${esc(s.co_iphan)}</a></dd>`
+    : row('Código IPHAN', s.co_iphan);
+  let iphan = '<dl>' +
+    codCell +
+    row('Nome', s.name) +
+    row('Estado (UF)', s.uf) +
+    row('Município', s.municipio) +
+    row('Tipo', s.tipo) +
+    row('Período', s.periodo) +
+    row('Natureza', s.nature) +
+    row('Cadastro', fmtDate(s.dt_cadastro)) +
+    coordCell(s) +
+    '</dl>';
+  if (s.sintese) iphan += `<p style="margin:12px 0 0;color:var(--muted)">${esc(s.sintese)}</p>`;
+
+  // --- Proteção panel
+  let prot;
+  if (s.protecoes.length) {
+    prot = '<ul class="protecoes">' + s.protecoes.map(p =>
+      `<li><b>${esc(p.tipo || '—')}</b> · <span style="color:var(--muted)">${esc(p.condicao || '—')}</span></li>`
+    ).join('') + '</ul>';
+  } else {
+    prot = '<p class="empty">Sem atos de proteção registrados.</p>';
+  }
+
+  // --- Contexto panel
+  let ctx = '';
+  const c = s.contexto;
+  if (c) {
+    ctx = ['objeto_analise', 'aspecto_geografico', 'morfologia_paisagem', 'sintese_historica']
+      .filter(k => c[k]).map(k =>
+        `<p><span class="lbl">${ {objeto_analise:'Objeto de análise', aspecto_geografico:'Aspecto geográfico', morfologia_paisagem:'Morfologia da paisagem', sintese_historica:'Síntese histórica'}[k] }</span><br>${esc(c[k])}</p>`
+      ).join('');
+  } else {
+    ctx = '<p class="empty">Fora das áreas de contexto paisagístico mapeadas.</p>';
+  }
+
+  // --- OSM panel
+  let osm;
+  if (s.osm) {
+    const tagRows = Object.entries(s.osm.tags)
+      .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+    osm = '<dl>' +
+      `<dt>OSM ID</dt><dd><a class="ext" target="_blank" rel="noopener" href="${osmLink(s.osm_id)}">${esc(s.osm_id)}</a></dd>` +
+      row('Geometria', s.osm_type) +
+      row('Correspondência', s.osm_method === 'ref:iphan' ? 'ref:iphan (código)' : 'proximidade espacial') +
+      row('Distância', s.osm_distance_m != null ? s.osm_distance_m + ' m' : null) +
+      '</dl>' +
+      `<p class="links"><a class="ext" href="elemento.html#${encodeURIComponent(s.osm_id)}">↔ Possíveis matches IPHAN deste elemento →</a></p>` +
+      '<h2>Tags OSM</h2><div class="tags">' + tagRows + '</div>';
+  } else {
+    osm = '<p class="empty">Sem correspondência no OpenStreetMap.</p>';
+  }
+
+  // --- Status panel
+  const map = {
+    mapeado: ['s-ok', 'p-ok', 'Mapeado'],
+    nao_mapeado: ['s-no', 'p-no', 'Não mapeado'],
+    divergencias: ['s-div', 'p-div', 'Divergências detectadas'],
+  }[s.status] || ['s-no', 'p-no', '—'];
+  let status = `<div class="status-card">
+      <div class="status-big ${map[0]}">${map[2]}</div>
+      <span class="pill ${map[1]}">${map[2]}</span>`;
+  const divs = parse(s.divergences) || [];
+  if (divs.length) {
+    status += '<ul class="divs">' + divs.map(d => `<li>${esc(d)}</li>`).join('') + '</ul>';
+  } else if (s.status === 'mapeado') {
+    status += '<p style="margin-top:12px;color:var(--muted)">Registro presente no OSM sem divergências.</p>';
+  } else {
+    status += '<p style="margin-top:12px;color:var(--muted)">Ainda não mapeado no OpenStreetMap.</p>';
+  }
+  status += '</div>';
+
+  document.getElementById('content').innerHTML =
+    '<div class="top">' +
+      `<section class="panel"><h2>Mapa</h2><div id="mapwrap"><div id="map"></div>` +
+      '<p class="legend">🟢 ponto IPHAN &nbsp; 🟡 OpenStreetMap &nbsp; ▭ área do sítio</p>' +
+      editorLinks(s) + '</div></section>' +
+      `<section class="panel"><h2>Proteção legal</h2>${prot}<h2>Contexto paisagístico</h2><div class="ctx">${ctx}</div></section>` +
+    '</div>' +
+    '<div class="panels">' +
+      `<section class="panel"><h2>Registro IPHAN (CNSA/SICG)</h2>${iphan}</section>` +
+      `<section class="panel"><h2>Registro OpenStreetMap</h2>${osm}</section>` +
+      `<section class="panel"><h2>Situação</h2>${status}</section>` +
+    '</div>';
+
+  renderMap(s);
+}
+
+async function load() {
+  const id = decodeURIComponent(location.hash.replace(/^#/, ''));
+  if (!id) {
+    document.getElementById('content').innerHTML =
+      '<p class="empty">Nenhum sítio selecionado. <a href="index.html">Voltar à lista</a>.</p>';
+    return;
+  }
+  try {
+    const r = await rows(`SELECT * FROM sites WHERE id = ${q(id)}`);
+    if (!r.length) throw new Error('não encontrado');
+    await render(r[0]);
+  } catch (err) {
+    document.getElementById('content').innerHTML =
+      `<p class="empty">Sítio não encontrado (${esc(err.message)}). ` +
+      '<a href="index.html">Voltar à lista</a>.</p>';
+  }
+}
+
+window.addEventListener('hashchange', load);
+load();
+</script>
+</body>
+</html>

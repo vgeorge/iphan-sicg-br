@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elemento OSM × candidatos IPHAN — Sítios Arqueológicos</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
+    --line: #e2e0db; --accent: #5b6e4f; --ok: #2f7d4f; --no: #b04a3a; --warn: #b8860b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); }
+  header { padding: 14px 20px; background: var(--accent); color: #fff; }
+  header a { color: #fff; opacity: .85; text-decoration: none; font-size: 13px; }
+  header a:hover { opacity: 1; }
+  header h1 { margin: 6px 0 0; font-size: 18px; }
+  .wrap { padding: 18px 20px; }
+  .top { display: grid; grid-template-columns: 1fr 1.1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 900px) { .top { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .panel h2 { margin: 0 0 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+              color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+  dt { color: var(--muted); font-size: 12px; }
+  dd { margin: 0; word-break: break-word; }
+  .tags { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; }
+  .tags dt { font-family: ui-monospace, Menlo, monospace; color: var(--accent); }
+  a.ext { color: var(--accent); }
+  #map { height: 320px; border-radius: 10px; border: 1px solid var(--line); }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .edlinks { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .edbtn { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 6px;
+           border: 1px solid var(--line); background: #fff; color: var(--accent); text-decoration: none; }
+  .edbtn:hover { background: #f0efe9; }
+  .empty { color: var(--muted); font-style: italic; }
+  /* candidates */
+  ul.cands { list-style: none; margin: 0; padding: 0; }
+  li.cand { display: grid; grid-template-columns: 70px 1fr auto; gap: 12px; align-items: start;
+            padding: 12px 0; border-bottom: 1px solid var(--line); }
+  li.cand:last-child { border-bottom: none; }
+  .dist { font-size: 12px; font-weight: 700; color: var(--accent); text-align: right; }
+  .dist small { display: block; font-weight: 400; color: var(--muted); }
+  .cand-name { font-weight: 600; }
+  .cand-meta { color: var(--muted); font-size: 12px; }
+  .code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .tag { font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+         background: #f3f2ec; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+  .copy { cursor: pointer; border: 1px solid var(--line); background: #fff; border-radius: 5px;
+          font-size: 11px; padding: 1px 6px; margin-left: 4px; color: var(--accent); }
+  .copy:hover { background: #f0efe9; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10px;
+          font-weight: 600; background: #e3f1e8; color: var(--ok); margin-left: 6px; }
+  .cand-act { text-align: right; min-width: 150px; }
+  .cand-act a { display: block; font-size: 12px; }
+  .hint { color: var(--muted); font-size: 11px; }
+  footer { padding: 14px 20px; font-size: 12px; color: var(--muted); }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <a href="osm.html">← Triagem de elementos OSM</a>
+  <h1 id="title">Elemento OSM × candidatos IPHAN</h1>
+</header>
+
+<div class="wrap">
+  <div id="content"><p class="empty">Carregando…</p></div>
+</div>
+
+<footer>
+  Candidatos por proximidade (haversine em SQL). <code>ref:iphan=no</code> não é convenção
+  estabelecida — confirme antes de editar. Fonte: IPHAN (SICG) ·
+  <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL).
+</footer>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module">
+import { rows, q } from './db.js';
+
+function esc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+const parse = (v) => (v == null || v === '') ? null : JSON.parse(v);
+const row = (k, v) => `<dt>${k}</dt><dd>${v == null || v === '' ?
+  '<span class="empty">—</span>' : esc(v)}</dd>`;
+
+function osmLink(osmId) {
+  const [t, id] = (osmId || '').split('/');
+  return `https://www.openstreetmap.org/${t}/${id}`;
+}
+function sicgLink(idBem) {
+  return `https://sicg.iphan.gov.br/sicg/bem/visualizar/${idBem}`;
+}
+function osmCoordUrl(lat, lon) {
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=18/${lat}/${lon}`;
+}
+function editLinks(lat, lon, osmId) {
+  if (lat == null) return '';
+  const [t, id] = (osmId || '').split('/');
+  const d = 0.004;
+  const idUrl = `https://www.openstreetmap.org/edit?editor=id&${t}=${id}#map=18/${lat}/${lon}`;
+  const josm = `http://127.0.0.1:8111/load_and_zoom?left=${lon-d}&right=${lon+d}` +
+               `&top=${lat+d}&bottom=${lat-d}&select=${t}${id}`;
+  return `<div class="edlinks">` +
+    `<a class="edbtn" target="_blank" rel="noopener" href="${idUrl}">✏️ editar no iD</a>` +
+    `<a class="edbtn" target="_blank" rel="noopener" href="${josm}">🖥️ abrir no JOSM</a></div>`;
+}
+
+async function resolveElement(osmId) {
+  // matched element lives in sites (osm_* columns); orphans in osm_orphans.
+  let m = await rows(`SELECT osm_id, osm_type, osm_tags, osm_lat, osm_lon, id AS matched_id,
+       name AS matched_name, co_iphan AS matched_co, id_bem AS matched_idbem
+       FROM sites WHERE osm_id = ${q(osmId)}`);
+  if (m.length) {
+    const e = m[0];
+    return { osm_id: e.osm_id, osm_type: e.osm_type, tags: parse(e.osm_tags) || {},
+             lat: e.osm_lat, lon: e.osm_lon,
+             matched: { id: e.matched_id, name: e.matched_name, co: e.matched_co, idbem: e.matched_idbem } };
+  }
+  let o = await rows(`SELECT * FROM osm_orphans WHERE osm_id = ${q(osmId)}`);
+  if (o.length) {
+    const e = o[0];
+    return { osm_id: e.osm_id, osm_type: e.osm_type, tags: parse(e.tags_json) || {},
+             lat: e.lat, lon: e.lon, matched: null, triage: e.triage,
+             nearest: { id: e.nearest_iphan_id, name: e.nearest_iphan_name, co: e.nearest_iphan_co, m: e.nearest_iphan_m } };
+  }
+  return null;
+}
+
+async function candidates(lat, lon, limit = 25, span = 0.05) {
+  return rows(`SELECT id, co_iphan, id_bem, name, uf, municipio, periodo, lat, lon,
+    ROUND(2*6371000*asin(sqrt(
+      pow(sin(radians((lat-(${lat}))/2)),2) +
+      cos(radians(${lat}))*cos(radians(lat))*pow(sin(radians((lon-(${lon}))/2)),2)
+    )),1) AS dist_m
+    FROM sites
+    WHERE lat IS NOT NULL
+      AND lat BETWEEN ${lat - span} AND ${lat + span}
+      AND lon BETWEEN ${lon - span} AND ${lon + span}
+    ORDER BY dist_m LIMIT ${limit}`);
+}
+
+function renderMap(el, cands) {
+  const map = L.map('map');
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  const layers = [];
+  const om = L.circleMarker([el.lat, el.lon], { radius: 8, color: '#b8860b',
+    fillColor: '#b8860b', fillOpacity: .9, weight: 2 }).addTo(map);
+  om.bindTooltip((el.tags.name || 'Elemento OSM') + ' (OSM)');
+  layers.push(om);
+  cands.slice(0, 12).forEach((c, i) => {
+    const cm = L.circleMarker([c.lat, c.lon], { radius: 5, color: '#2f7d4f',
+      fillColor: i === 0 ? '#2f7d4f' : '#9bb5a0', fillOpacity: .8, weight: 1 }).addTo(map);
+    cm.bindTooltip(`${c.name} · ${c.dist_m} m`);
+    layers.push(cm);
+  });
+  try {
+    const b = L.featureGroup(layers).getBounds();
+    if (b.isValid() && b.getNorth() !== b.getSouth()) map.fitBounds(b, { padding: [30,30], maxZoom: 16 });
+    else map.setView([el.lat, el.lon], 15);
+  } catch { map.setView([el.lat, el.lon], 15); }
+}
+
+function render(el, cands) {
+  document.getElementById('title').textContent =
+    'Elemento ' + (el.osm_id || '?') + ' × candidatos IPHAN';
+  document.title = (el.tags.name || el.osm_id) + ' — elemento OSM';
+
+  const tagRows = Object.entries(el.tags)
+    .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+  const osmCard = '<dl>' +
+    `<dt>OSM ID</dt><dd><a class="ext" target="_blank" rel="noopener" href="${osmLink(el.osm_id)}">${esc(el.osm_id)}</a></dd>` +
+    row('Geometria', el.osm_type) +
+    (el.lat != null
+      ? `<dt>Coordenadas</dt><dd><a class="ext" target="_blank" rel="noopener" href="${osmCoordUrl(el.lat, el.lon)}">${el.lat}, ${el.lon}</a></dd>`
+      : row('Coordenadas', null)) +
+    '</dl>' +
+    (tagRows ? '<h2 style="margin-top:14px">Tags OSM</h2><div class="tags">' + tagRows + '</div>' : '') +
+    editLinks(el.lat, el.lon, el.osm_id);
+
+  const intro = el.matched
+    ? `<p class="hint" style="margin:0 0 10px">Atualmente casado com <b>${esc(el.matched.name)}</b>
+       (<code>${esc(el.matched.co)}</code>${el.matched.idbem ? ` · <a class="ext" target="_blank" rel="noopener" href="${sicgLink(el.matched.idbem)}">SICG</a>` : ''}).
+       Confirme se é mesmo o mais provável entre os candidatos abaixo.</p>`
+    : (el.triage === 'sem_cadastro'
+        ? `<p class="hint" style="margin:0 0 10px">Órfão sem IPHAN próximo — se nenhum candidato for o mesmo sítio,
+           considere <code>ref:iphan=no</code>.</p>`
+        : `<p class="hint" style="margin:0 0 10px">Órfão (${esc(el.triage||'?')}) — candidatos próximos abaixo.</p>`);
+
+  let list = '';
+  if (!cands.length) {
+    list = '<p class="empty">Nenhum sítio IPHAN num raio de ~5 km.</p>';
+  } else {
+    list = '<ul class="cands">' + cands.map(c => {
+      const isMatch = el.matched && el.matched.id === c.id;
+      const refTag = `ref:iphan=${c.co_iphan}`;
+      const label = c.dist_m <= 150 ? 'provável' : (c.dist_m <= 1000 ? 'possível' : 'distante');
+      return `<li class="cand">
+        <div class="dist">${(c.dist_m||0).toLocaleString('pt-BR')}<small>m · ${label}</small></div>
+        <div>
+          <div class="cand-name"><a class="ext" href="site.html#${encodeURIComponent(c.id)}">${esc(c.name) || c.id}</a>${isMatch ? '<span class="pill">match atual</span>' : ''}</div>
+          <div class="cand-meta"><span class="code">${esc(c.co_iphan)}</span> · ${esc(c.uf)} · ${esc(c.municipio)}${c.periodo ? ' · ' + esc(c.periodo) : ''}${c.id_bem ? ` · <a class="ext" target="_blank" rel="noopener" href="${sicgLink(c.id_bem)}">SICG</a>` : ''}</div>
+          <div style="margin-top:4px"><span class="tag">${esc(refTag)}</span><button class="copy" data-copy="${esc(refTag)}">copiar</button></div>
+        </div>
+        <div class="cand-act"></div>
+      </li>`;
+    }).join('') + '</ul>';
+  }
+
+  document.getElementById('content').innerHTML =
+    '<div class="top">' +
+      `<section class="panel"><h2>Elemento OpenStreetMap</h2>${osmCard}</section>` +
+      `<section class="panel"><h2>Mapa</h2><div id="map"></div>` +
+      '<p class="legend">🟡 elemento OSM &nbsp; 🟢 candidatos IPHAN (mais escuro = mais próximo)</p></section>' +
+    '</div>' +
+    `<section class="panel"><h2>Possíveis matches no IPHAN (${cands.length})</h2>${intro}${list}</section>`;
+
+  if (el.lat != null) renderMap(el, cands);
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.copy');
+  if (!btn) return;
+  navigator.clipboard?.writeText(btn.dataset.copy);
+  const old = btn.textContent;
+  btn.textContent = 'copiado!';
+  setTimeout(() => { btn.textContent = old; }, 1200);
+});
+
+async function load() {
+  const osmId = decodeURIComponent(location.hash.replace(/^#/, ''));
+  if (!osmId) {
+    document.getElementById('content').innerHTML =
+      '<p class="empty">Nenhum elemento selecionado. Use um link da ' +
+      '<a href="osm.html">triagem OSM</a>.</p>';
+    return;
+  }
+  try {
+    const el = await resolveElement(osmId);
+    if (!el) throw new Error('elemento não encontrado');
+    const cands = el.lat != null ? await candidates(el.lat, el.lon) : [];
+    render(el, cands);
+  } catch (err) {
+    document.getElementById('content').innerHTML =
+      `<p class="empty">Elemento não encontrado (${esc(err.message)}). ` +
+      `<a href="osm.html">Voltar à triagem</a>.</p>`;
+  }
+}
+
+window.addEventListener('hashchange', load);
+load();
+</script>
+</body>
+</html>

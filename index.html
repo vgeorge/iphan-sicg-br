@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sítios Arqueológicos do Brasil — IPHAN × OpenStreetMap</title>
+<link rel="stylesheet" href="vendor/gridjs/mermaid.min.css">
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #fff; --ink: #1f2421; --muted: #6b7280;
+    --line: #e2e0db; --accent: #5b6e4f; --ok: #2f7d4f; --no: #b04a3a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); }
+  header { padding: 14px 20px; background: var(--accent); color: #fff; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header p { margin: 2px 0 0; font-size: 12px; opacity: .85; }
+  .layout { display: flex; align-items: flex-start; }
+  aside { width: 250px; flex: none; padding: 16px; border-right: 1px solid var(--line);
+          background: var(--panel); position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+             color: var(--muted); margin: 18px 0 6px; }
+  aside h2:first-child { margin-top: 0; }
+  select, input[type=search] { width: 100%; padding: 6px; border: 1px solid var(--line);
+            border-radius: 6px; background: #fff; font: inherit; }
+  .navlink { display: block; margin-top: 6px; font-size: 13px; color: var(--accent);
+             text-decoration: none; line-height: 1.3; }
+  .navlink:hover { text-decoration: underline; }
+  main { flex: 1; padding: 16px 20px; min-width: 0; }
+  .counts { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+  .counts b { color: var(--ink); }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px;
+           font-size: 11px; font-weight: 600; }
+  .b-ok { background: #e3f1e8; color: var(--ok); }
+  .b-no { background: #f6e6e2; color: var(--no); }
+  .dist { color: var(--muted); font-size: 11px; margin-left: 4px; }
+  a.rowlink { color: var(--ink); text-decoration: none; }
+  a.rowlink:hover { color: var(--accent); text-decoration: underline; }
+  /* Grid.js tuning */
+  .gridjs-table { font-size: 13px; }
+  .gridjs-th { background: #efeee9; font-size: 11px; text-transform: uppercase;
+               letter-spacing: .04em; color: var(--muted); }
+  footer { padding: 14px 20px; font-size: 12px; color: var(--muted); }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sítios Arqueológicos do Brasil</h1>
+  <p>Cruzamento dos dados do IPHAN (SICG/CNSA) com o OpenStreetMap</p>
+</header>
+
+<div class="layout">
+  <aside>
+    <h2>Busca</h2>
+    <input type="search" id="q" placeholder="Nome ou município…">
+
+    <h2>Estado (UF)</h2>
+    <select id="uf"><option value="">Todos</option></select>
+
+    <h2>Período</h2>
+    <select id="periodo"><option value="">Todos</option></select>
+
+    <h2>Status OSM</h2>
+    <select id="osm">
+      <option value="">Todos</option>
+      <option value="mapped">Mapeado</option>
+      <option value="not">Não mapeado</option>
+    </select>
+
+    <h2>Geometria</h2>
+    <select id="area">
+      <option value="">Todas</option>
+      <option value="area">Com área (polígono)</option>
+      <option value="point">Só ponto</option>
+    </select>
+
+    <h2>Outros</h2>
+    <a class="navlink" href="stats.html">Painel de estatísticas →</a>
+    <a class="navlink" href="osm.html">Triagem de elementos OSM sem IPHAN →</a>
+    <a class="navlink" href="sobre.html">Sobre o cadastro IPHAN →</a>
+  </aside>
+
+  <main>
+    <p class="counts" id="counts">Carregando banco de dados…</p>
+    <div id="table"></div>
+  </main>
+</div>
+
+<footer>
+  Fonte: <a href="https://www.gov.br/iphan/" target="_blank" rel="noopener">IPHAN</a>
+  (SICG, uso público — NUP 72020.002963/2022-34) ·
+  <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL) ·
+  municípios via <a href="https://www.ibge.gov.br/" target="_blank" rel="noopener">IBGE</a>.
+  Consulta local via DuckDB-WASM; o site só acessa a rede para os tiles do mapa.
+</footer>
+
+<script src="vendor/gridjs/gridjs.umd.js"></script>
+<script type="module">
+import { rows, scalar, q } from './db.js';
+const $ = (id) => document.getElementById(id);
+const fEls = ['q', 'uf', 'periodo', 'osm', 'area'].map($);
+let grid = null;
+
+function esc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+// OSM cell encodes a sortable number: -1 = mapped by ref, >=0 = proximity (m), null = none.
+function osmCell(r) {
+  if (!r.osm_mapped) return null;
+  return r.osm_method === 'ref:iphan' ? -1 : (r.osm_distance_m ?? -1);
+}
+
+function toRows(list) {
+  return list.map(r => [r.name || '', r.uf || '', r.municipio || '',
+                        r.periodo || '', osmCell(r), r.id]);
+}
+
+function where() {
+  const parts = [];
+  const uf = $('uf').value, per = $('periodo').value, osm = $('osm').value, area = $('area').value;
+  const term = $('q').value.trim();
+  if (uf) parts.push(`uf = ${q(uf)}`);
+  if (per) parts.push(`periodo = ${q(per)}`);
+  if (osm === 'mapped') parts.push('osm_mapped');
+  if (osm === 'not') parts.push('NOT osm_mapped');
+  if (area === 'area') parts.push('area_geojson IS NOT NULL');
+  if (area === 'point') parts.push('area_geojson IS NULL');
+  if (term) parts.push(`(LOWER(name) LIKE ${q('%' + term + '%')} OR LOWER(municipio) LIKE ${q('%' + term + '%')})`);
+  return parts.length ? ' WHERE ' + parts.join(' AND ') : '';
+}
+
+async function apply() {
+  const list = await rows(
+    `SELECT id, name, uf, municipio, periodo, osm_mapped, osm_method, osm_distance_m
+     FROM sites${where()}`);
+  $('counts').innerHTML =
+    `<b>${list.length.toLocaleString('pt-BR')}</b> de ` +
+    `<b id="tot">…</b> sítios · ` +
+    `<b id="map">…</b> mapeados no OSM`;
+  $('tot').textContent = TOTAL.toLocaleString('pt-BR');
+  $('map').textContent = MAPPED.toLocaleString('pt-BR');
+  grid.updateConfig({ data: toRows(list) }).forceRender();
+}
+
+const columns = [
+  { name: 'Nome', formatter: (cell, row) =>
+      gridjs.html(`<a class="rowlink" href="site.html#${encodeURIComponent(row.cells[5].data)}">${esc(cell)}</a>`) },
+  { name: 'UF', width: '60px' },
+  { name: 'Município' },
+  { name: 'Período' },
+  { name: 'OSM', width: '150px', formatter: (cell) => {
+      if (cell == null) return gridjs.html('<span class="badge b-no">não mapeado</span>');
+      const d = (cell >= 0) ? `<span class="dist">${cell} m</span>` : '';
+      return gridjs.html(`<span class="badge b-ok">mapeado</span>${d}`);
+    } },
+  { id: 'id', name: 'id', hidden: true },
+];
+
+let TOTAL = 0, MAPPED = 0;
+try {
+  TOTAL = await scalar('SELECT count(*) FROM sites');
+  MAPPED = await scalar('SELECT count(*) FROM sites WHERE osm_mapped');
+  for (const [el, col] of [[$('uf'), 'uf'], [$('periodo'), 'periodo']]) {
+    const vals = await rows(`SELECT DISTINCT ${col} AS v FROM sites WHERE ${col} IS NOT NULL ORDER BY ${col}`);
+    for (const { v } of vals) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = v; el.appendChild(o);
+    }
+  }
+  grid = new gridjs.Grid({
+    columns,
+    data: [],
+    pagination: { limit: 50 },
+    sort: true,
+    autoWidth: true,
+    language: {
+      pagination: { previous: 'Anterior', next: 'Próximo', showing: 'Exibindo',
+                    results: () => 'resultados', to: 'a', of: 'de' },
+      noRecordsFound: 'Nenhum sítio encontrado',
+    },
+  }).render($('table'));
+  await apply();
+  let t;
+  fEls.forEach(el => el.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(apply, 200);
+  }));
+} catch (err) {
+  $('counts').innerHTML =
+    '<span style="color:var(--no)">Falha ao iniciar o banco (' + esc(err.message) +
+    '). Gere os dados com <code>python build/fetch.py</code>.</span>';
+}
+</script>
+</body>
+</html>
